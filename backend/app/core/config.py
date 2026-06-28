@@ -1,6 +1,7 @@
 """Application configuration via pydantic-settings."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,6 +27,11 @@ class Settings(BaseSettings):
     # See https://www.sec.gov/os/webmaster-faq#developers
     sec_tickers_url: str = "https://www.sec.gov/files/company_tickers.json"
     sec_user_agent: str = "FilingLens tobiakere05@gmail.com"
+
+    # Directory where downloaded 10-K HTML is cached. Relative to the backend
+    # working directory; override via .env if needed. SEC filings are immutable,
+    # so cached copies never go stale.
+    cache_dir: Path = Path(".cache") / "filings"
 
 
 @lru_cache

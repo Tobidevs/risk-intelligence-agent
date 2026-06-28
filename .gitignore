@@ -2,3 +2,6 @@
 .next/
 .DS_Store
 .vscode/
+
+# Cached SEC filing HTML
+.cache/

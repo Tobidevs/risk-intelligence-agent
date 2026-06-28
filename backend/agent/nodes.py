@@ -3,14 +3,14 @@ import asyncio
 import httpx
 import requests
 
+from agent.cache import read_cache, write_cache
 from agent.state import WorkflowState
+from app.core.config import get_settings
 
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik_padded}.json"
 SEC_ARCHIVE_DOC_URL = (
     "https://www.sec.gov/Archives/edgar/data/{cik}/{accession_no_dashes}/{filename}"
 )
-# SEC requires a descriptive User-Agent identifying the requester.
-SEC_USER_AGENT = "risk-intelligence-agent tobiakere05@gmail.com"
 
 
 def retrieve_company_filings(state: WorkflowState) -> dict:
@@ -25,7 +25,8 @@ def retrieve_company_filings(state: WorkflowState) -> dict:
     cik_padded = str(state["company_cik"]).zfill(10)
     url = SEC_SUBMISSIONS_URL.format(cik_padded=cik_padded)
 
-    response = requests.get(url, headers={"User-Agent": SEC_USER_AGENT}, timeout=30)
+    headers = {"User-Agent": get_settings().sec_user_agent}
+    response = requests.get(url, headers=headers, timeout=30)
     response.raise_for_status()
     data = response.json()
 
@@ -74,33 +75,52 @@ async def retrieve_filing_index(state: WorkflowState) -> dict:
     """Retrieve the raw HTML of the current- and prior-year 10-K documents.
 
     Reads the accession numbers and primary document filenames written to state
-    by retrieve_company_filings, then fetches both 10-K HTML documents from the
-    SEC archive concurrently. Returns a state update with the raw HTML for each
-    year.
+    by retrieve_company_filings. Each document is checked against the filesystem
+    cache first; only cache misses are downloaded from the SEC archive (those
+    fetches still run concurrently), and freshly downloaded HTML is written back
+    to the cache. Returns a state update with the raw HTML for each year.
     """
     cik = str(int(state["company_cik"]))  # archive paths use the unpadded CIK
 
-    async with httpx.AsyncClient(
-        headers={"User-Agent": SEC_USER_AGENT}, timeout=30
-    ) as client:
-        current_html, prior_html = await asyncio.gather(
-            _fetch_10k_html(
-                client,
-                cik,
-                state["current_year_accession"],
-                state["current_year_primary_doc"],
-            ),
-            _fetch_10k_html(
-                client,
-                cik,
-                state["prior_year_accession"],
-                state["prior_year_primary_doc"],
-            ),
-        )
+    docs = {
+        "current_year_html": (
+            state["current_year_accession"],
+            state["current_year_primary_doc"],
+        ),
+        "prior_year_html": (
+            state["prior_year_accession"],
+            state["prior_year_primary_doc"],
+        ),
+    }
+
+    results: dict[str, str] = {}
+    misses: dict[str, tuple[str, str]] = {}
+
+    # Check the cache first; anything not on disk is a miss to be fetched.
+    for key, (accession, filename) in docs.items():
+        cached = read_cache(accession, filename)
+        if cached is not None:
+            results[key] = cached
+        else:
+            misses[key] = (accession, filename)
+
+    # Download any misses concurrently, then write them to the cache.
+    if misses:
+        headers = {"User-Agent": get_settings().sec_user_agent}
+        async with httpx.AsyncClient(headers=headers, timeout=30) as client:
+            fetched = await asyncio.gather(
+                *(
+                    _fetch_10k_html(client, cik, accession, filename)
+                    for accession, filename in misses.values()
+                )
+            )
+        for (key, (accession, filename)), html in zip(misses.items(), fetched):
+            write_cache(accession, filename, html)
+            results[key] = html
 
     return {
-        "current_year_html": current_html,
-        "prior_year_html": prior_html,
+        "current_year_html": results["current_year_html"],
+        "prior_year_html": results["prior_year_html"],
     }
 
 
