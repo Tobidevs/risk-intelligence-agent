@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +33,12 @@ class Settings(BaseSettings):
     # working directory; override via .env if needed. SEC filings are immutable,
     # so cached copies never go stale.
     cache_dir: Path = Path(".cache") / "filings"
+
+    # LlamaCloud API key, used by LlamaExtract to pull structured sections out
+    # of the 10-K HTML. Read from the LLAMAINDEX_API_KEY env var / .env entry.
+    llama_cloud_api_key: str | None = Field(
+        default=None, validation_alias="LLAMAINDEX_API_KEY"
+    )
 
 
 @lru_cache
