@@ -1,4 +1,5 @@
 import asyncio
+from typing import Literal
 
 import httpx
 import requests
@@ -133,6 +134,16 @@ async def retrieve_filing_index(state: WorkflowState) -> dict:
     }
 
 
+RiskCategory = Literal[
+    "Market Risk",
+    "Credit Risk",
+    "Operational Risk",
+    "Regulatory/Compliance Risk",
+    "Strategic Risk",
+    "Reputational Risk",
+]
+
+
 class RiskFactor(BaseModel):
     """A single, discrete risk factor within the Item 1A section.
 
@@ -143,9 +154,18 @@ class RiskFactor(BaseModel):
 
     title: str = Field(
         description=(
-            "The bold summary sentence that introduces this risk factor and "
-            "serves as its heading, copied verbatim (e.g. \"The Company's future "
-            "performance depends in part on support from third-party developers.\")."
+            "A concise, descriptive title for this risk factor (roughly 3-8 "
+            "words), written by you as a heading — not the verbatim summary "
+            'sentence. For example, a factor whose summary sentence reads "The '
+            "Company's future performance depends in part on support from "
+            'third-party developers." might be titled "Reliance on Third-Party '
+            'Developers".'
+        )
+    )
+    category: RiskCategory = Field(
+        description=(
+            "The single category that best classifies this risk factor, chosen "
+            "from the allowed set."
         )
     )
     verbatim_text: str = Field(
@@ -281,7 +301,7 @@ if __name__ == "__main__":
         for i, factor in enumerate(factors, 1):
             title = " ".join(factor["title"].split())
             body = " ".join(factor["verbatim_text"].split())
-            print(f"\n[{i}] {title}")
+            print(f"\n[{i}] {title}  <{factor['category']}>")
             print(f"    ({len(factor['verbatim_text']):,} chars) {body[:200]} ...")
         mda = test_state[mda_key]
         print(f"\n--- {mda_key} ({len(mda):,} chars) ---")
