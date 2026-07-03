@@ -51,6 +51,13 @@ class Settings(BaseSettings):
         default=None, validation_alias="OPENAI_API_KEY"
     )
 
+    # Braintrust API key, used for tracing. Read from the BRAINTRUST_API_KEY
+    # env var / .env entry and passed explicitly to init_logger rather than
+    # relying on the Braintrust SDK's own (cwd-dependent) environment lookup.
+    braintrust_api_key: str | None = Field(
+        default=None, validation_alias="BRAINTRUST_API_KEY"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

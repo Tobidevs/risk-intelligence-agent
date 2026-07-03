@@ -46,6 +46,10 @@ async def run_test() -> WorkflowState:
 
 
 if __name__ == "__main__":
+    from app.core.tracing import init_tracing
+
+    init_tracing()
+
     result = asyncio.run(run_test())
 
     for rf_key, mda_key in (
