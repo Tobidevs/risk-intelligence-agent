@@ -1,12 +1,13 @@
 import asyncio
-import time
 
 import httpx
 import requests
-from llama_cloud import LlamaCloud
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from agent.cache import read_cache, write_cache
+from agent.prompts import RISK_FACTOR_EXTRACTION_SYSTEM_PROMPT
 from agent.state import WorkflowState
 from app.core.config import get_settings
 
@@ -14,6 +15,7 @@ SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik_padded}.json"
 SEC_ARCHIVE_DOC_URL = (
     "https://www.sec.gov/Archives/edgar/data/{cik}/{accession_no_dashes}/{filename}"
 )
+SEC_API_EXTRACTOR_URL = "https://api.sec-api.io/extractor"
 
 
 def retrieve_company_filings(state: WorkflowState) -> dict:
@@ -61,15 +63,19 @@ def retrieve_company_filings(state: WorkflowState) -> dict:
     }
 
 
+def _filing_url(cik: str, accession: str, filename: str) -> str:
+    """Build the SEC archive URL for a filing's primary document."""
+    accession_no_dashes = accession.replace("-", "")
+    return SEC_ARCHIVE_DOC_URL.format(
+        cik=cik, accession_no_dashes=accession_no_dashes, filename=filename
+    )
+
+
 async def _fetch_10k_html(
     client: httpx.AsyncClient, cik: str, accession: str, filename: str
 ) -> str:
     """Fetch the raw HTML of a single 10-K primary document from the archive."""
-    accession_no_dashes = accession.replace("-", "")
-    url = SEC_ARCHIVE_DOC_URL.format(
-        cik=cik, accession_no_dashes=accession_no_dashes, filename=filename
-    )
-    response = await client.get(url)
+    response = await client.get(_filing_url(cik, accession, filename))
     response.raise_for_status()
     return response.text
 
@@ -153,101 +159,92 @@ class RiskFactor(BaseModel):
     )
 
 
-class TenKSections(BaseModel):
-    """LlamaExtract target schema for the two 10-K sections we care about.
+class RiskFactorList(BaseModel):
+    """Structured-output target for decomposing Item 1A into risk factors."""
 
-    The field descriptions double as extraction instructions for the model, so
-    they spell out exactly which content to capture and that it must be verbatim
-    rather than summarized. Item 1A is decomposed into individual risk factors
-    (a repeating entity), while Item 7 is kept as a single section blob.
-    """
-
-    item_1a_risk_factors: list[RiskFactor] = Field(
+    risk_factors: list[RiskFactor] = Field(
         description=(
-            "Every individual risk factor disclosed under 'Item 1A. Risk "
-            "Factors', in the order they appear. Each entry is one discrete risk "
-            "factor. Do not include the section's introductory preamble as a risk "
-            "factor, and do not omit any risk factor."
-        )
-    )
-    item_7_mda: str = Field(
-        description=(
-            "The complete, verbatim text of the \"Item 7. Management's Discussion "
-            "and Analysis of Financial Condition and Results of Operations\" "
-            "(MD&A) section of the 10-K, from the section heading up to (but not "
-            "including) the next item heading. Preserve the wording exactly; do "
-            "not summarize or paraphrase."
+            "Every individual risk factor disclosed in the text, in the order "
+            "they appear."
         )
     )
 
 
-# A LlamaCloud extract job is done once it leaves PENDING; these are the
-# terminal states we stop polling on. SUCCESS / PARTIAL_SUCCESS carry results.
-_EXTRACT_TERMINAL_STATUSES = {"SUCCESS", "PARTIAL_SUCCESS", "ERROR", "CANCELLED"}
-
-
-def _extract_sections_from_html(
-    client: LlamaCloud, html: str, filename: str
-) -> dict:
-    """Run LlamaExtract over one 10-K's HTML and return the extracted sections.
-
-    The cached HTML bytes are uploaded directly (no re-download), an extraction
-    job is created against the TenKSections schema, and the job is polled until
-    it reaches a terminal status. The filename gives LlamaCloud the .htm hint it
-    needs to parse the markup rather than treat it as plain text.
-    """
-    file_obj = client.files.create(
-        file=(filename, html.encode("utf-8")),
-        purpose="extract",
-    )
-
-    job = client.extract.create(
-        file_input=file_obj.id,
-        configuration={
-            "data_schema": TenKSections.model_json_schema(),
-            "extraction_target": "per_doc",
-            "tier": "agentic",
+async def _extract_item_via_sec_api(
+    client: httpx.AsyncClient, filing_url: str, item: str
+) -> str:
+    """Fetch one 10-K item's clean text via the sec-api.io Extractor API."""
+    response = await client.get(
+        SEC_API_EXTRACTOR_URL,
+        params={
+            "url": filing_url,
+            "item": item,
+            "type": "text",
+            "token": get_settings().sec_api_api_key,
         },
     )
-
-    while job.status not in _EXTRACT_TERMINAL_STATUSES:
-        time.sleep(2)
-        job = client.extract.get(job.id)
-
-    if job.status not in ("SUCCESS", "PARTIAL_SUCCESS"):
-        raise RuntimeError(
-            f"LlamaExtract job for {filename} ended in {job.status}: "
-            f"{job.error_message}"
-        )
-
-    return job.extract_result
+    response.raise_for_status()
+    return response.text
 
 
-def extract_filing_sections(state: WorkflowState) -> dict:
+async def _extract_sections_from_filing(
+    client: httpx.AsyncClient, filing_url: str
+) -> dict:
+    """Fetch Item 1A and Item 7 text for one filing, scoped directly by sec-api.io."""
+    item_1a_text, item_7_text = await asyncio.gather(
+        _extract_item_via_sec_api(client, filing_url, "1A"),
+        _extract_item_via_sec_api(client, filing_url, "7"),
+    )
+    return {"item_1a_text": item_1a_text, "item_7_text": item_7_text}
+
+
+def _decompose_risk_factors(model, item_1a_text: str) -> list[dict]:
+    """Split one filing's Item 1A text into individual risk factors via an LLM."""
+    structured_model = model.with_structured_output(RiskFactorList)
+    result = structured_model.invoke(
+        [
+            SystemMessage(content=RISK_FACTOR_EXTRACTION_SYSTEM_PROMPT),
+            HumanMessage(content=item_1a_text),
+        ]
+    )
+    return [risk_factor.model_dump() for risk_factor in result.risk_factors]
+
+
+async def extract_filing_sections(state: WorkflowState) -> dict:
     """Extract Item 1A risk factors and Item 7 (MD&A) from both 10-Ks.
 
-    Uses the LlamaCloud (v2) Extract API on the raw 10-K HTML already fetched
-    into state by retrieve_filing_index. Item 1A is decomposed into a list of
-    individual risk factors (each with a title and verbatim text) via the
-    repeating-entity TenKSections schema, and Item 7 is captured as a single
-    blob. Each year's cached HTML is uploaded and extracted, then the job is
-    polled to completion. Returns a state update with, per year, the list of
-    risk factors and the MD&A text.
+    Item 1A and Item 7 text are pulled directly from each filing via the
+    sec-api.io Extractor API, scoped to just those sections (no whole-document
+    search needed). Item 1A is then decomposed into a list of individual risk
+    factors (each with a title and verbatim text) by an LLM structured-output
+    call; Item 7 is stored verbatim as sec-api.io returns it. Returns a state
+    update with, per year, the list of risk factors and the MD&A text.
     """
-    client = LlamaCloud(api_key=get_settings().llama_cloud_api_key)
+    cik = str(int(state["company_cik"]))  # archive paths use the unpadded CIK
+    current_url = _filing_url(
+        cik, state["current_year_accession"], state["current_year_primary_doc"]
+    )
+    prior_url = _filing_url(
+        cik, state["prior_year_accession"], state["prior_year_primary_doc"]
+    )
 
-    current = _extract_sections_from_html(
-        client, state["current_year_html"], state["current_year_primary_doc"]
-    )
-    prior = _extract_sections_from_html(
-        client, state["prior_year_html"], state["prior_year_primary_doc"]
-    )
+    async with httpx.AsyncClient(timeout=60) as client:
+        current_sections, prior_sections = await asyncio.gather(
+            _extract_sections_from_filing(client, current_url),
+            _extract_sections_from_filing(client, prior_url),
+        )
+
+    model = init_chat_model("gpt-5", model_provider="openai")
 
     return {
-        "current_year_risk_factors": current["item_1a_risk_factors"],
-        "prior_year_risk_factors": prior["item_1a_risk_factors"],
-        "current_year_mda": current["item_7_mda"],
-        "prior_year_mda": prior["item_7_mda"],
+        "current_year_risk_factors": _decompose_risk_factors(
+            model, current_sections["item_1a_text"]
+        ),
+        "prior_year_risk_factors": _decompose_risk_factors(
+            model, prior_sections["item_1a_text"]
+        ),
+        "current_year_mda": current_sections["item_7_text"],
+        "prior_year_mda": prior_sections["item_7_text"],
     }
 
 
@@ -266,8 +263,8 @@ if __name__ == "__main__":
     print("current_year_html length:", len(test_state["current_year_html"]))
     print("prior_year_html length:", len(test_state["prior_year_html"]))
 
-    print("\nExtracting sections with LlamaExtract (this calls LlamaCloud)...")
-    test_state.update(extract_filing_sections(test_state))
+    print("\nExtracting sections via sec-api.io and decomposing risk factors...")
+    test_state.update(asyncio.run(extract_filing_sections(test_state)))
 
     for rf_key, mda_key in (
         ("current_year_risk_factors", "current_year_mda"),

@@ -33,8 +33,9 @@ async def run_test() -> WorkflowState:
     """Run the full graph for Apple's FY2020 (current) and FY2019 (prior) 10-Ks.
 
     Manual smoke test of the end-to-end workflow: SEC filing lookup, HTML
-    retrieval, and LlamaExtract section extraction, wired together as a graph.
-    Uses ainvoke because retrieve_filing_index is an async node.
+    retrieval, and sec-api.io section extraction with LLM risk-factor
+    decomposition, wired together as a graph. Uses ainvoke because
+    retrieve_filing_index and extract_filing_sections are async nodes.
     """
     initial_state: WorkflowState = {
         "company_cik": "320193",  # Apple Inc.
