@@ -251,6 +251,10 @@ async def extract_filing_sections(state: WorkflowState) -> dict:
 
 
 if __name__ == "__main__":
+    from app.core.tracing import init_tracing
+
+    init_tracing()
+
     # Quick test: Apple (CIK 320193), 10-K HTML for 2020 and 2019.
     test_state: WorkflowState = {
         "company_cik": "320193",

@@ -1,11 +1,8 @@
 """FastAPI application entrypoint and factory."""
 
-import braintrust
+from app.core.tracing import init_tracing
 
-# Must run before any AI library imports or client creation, per
-# https://www.braintrust.dev/docs/tracing-quickstart.
-braintrust.init_logger(project="Risk-Intelligence-Agent")
-braintrust.auto_instrument()
+init_tracing()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
