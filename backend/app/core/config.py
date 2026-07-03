@@ -10,8 +10,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Runtime settings, overridable via environment variables or a .env file."""
 
+    # Anchored to this file's location (not the process's cwd) so settings load
+    # correctly regardless of the directory a command is run from.
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=Path(__file__).resolve().parent.parent.parent / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -39,6 +41,14 @@ class Settings(BaseSettings):
     # SEC_API_API_KEY env var / .env entry.
     sec_api_api_key: str | None = Field(
         default=None, validation_alias="SEC_API_API_KEY"
+    )
+
+    # OpenAI API key, used by the LangChain chat model to decompose Item 1A
+    # into individual risk factors. Read from the OPENAI_API_KEY env var /
+    # .env entry and passed explicitly to init_chat_model rather than relying
+    # on the OpenAI SDK's own (cwd-dependent) environment lookup.
+    openai_api_key: str | None = Field(
+        default=None, validation_alias="OPENAI_API_KEY"
     )
 
 

@@ -234,7 +234,9 @@ async def extract_filing_sections(state: WorkflowState) -> dict:
             _extract_sections_from_filing(client, prior_url),
         )
 
-    model = init_chat_model("gpt-5", model_provider="openai")
+    model = init_chat_model(
+        "gpt-5", model_provider="openai", api_key=get_settings().openai_api_key
+    )
 
     return {
         "current_year_risk_factors": _decompose_risk_factors(
