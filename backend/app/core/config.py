@@ -34,10 +34,11 @@ class Settings(BaseSettings):
     # so cached copies never go stale.
     cache_dir: Path = Path(".cache") / "filings"
 
-    # LlamaCloud API key, used by LlamaExtract to pull structured sections out
-    # of the 10-K HTML. Read from the LLAMAINDEX_API_KEY env var / .env entry.
-    llama_cloud_api_key: str | None = Field(
-        default=None, validation_alias="LLAMAINDEX_API_KEY"
+    # sec-api.io API key, used by the Extractor API to pull Item 1A and Item 7
+    # text directly out of a 10-K filing by section. Read from the
+    # SEC_API_API_KEY env var / .env entry.
+    sec_api_api_key: str | None = Field(
+        default=None, validation_alias="SEC_API_API_KEY"
     )
 
 
