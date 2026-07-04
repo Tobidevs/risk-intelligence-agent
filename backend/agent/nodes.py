@@ -5,6 +5,7 @@ import httpx
 import requests
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
 from agent.cache import read_cache, write_cache
@@ -212,6 +213,41 @@ async def extract_filing_sections(state: WorkflowState) -> dict:
         ),
         "current_year_mda": current_sections["item_7_text"],
         "prior_year_mda": prior_sections["item_7_text"],
+    }
+
+
+def await_risk_factor_selection(state: WorkflowState) -> dict:
+    """Pause the run and hand the gathered risk factors to the user to choose from.
+
+    interrupt() surfaces the current-year risk factors to the caller and
+    suspends the graph (the checkpointer persists progress). When the run is
+    resumed with Command(resume=<selected factors>), interrupt() returns that
+    value, which we store as the subset to assess.
+    """
+    selected = interrupt(
+        {"current_year_risk_factors": state["current_year_risk_factors"]}
+    )
+    return {"selected_risk_factors": selected}
+
+
+def assess_selected_risk_factors(state: WorkflowState) -> dict:
+    """Assess only the user-selected risk factors.
+
+    STUB: real deep-dive analysis (severity, prior-year trend, business
+    implications) is a later task. For now this echoes the selected factors with
+    a placeholder status so the end-to-end select/resume loop is exercisable.
+    """
+    selected = state.get("selected_risk_factors", []) or []
+    return {
+        "assessment": [
+            {
+                "title": factor["title"],
+                "category": factor.get("category"),
+                "status": "pending",
+                "note": "assessment not yet implemented",
+            }
+            for factor in selected
+        ]
     }
 
 

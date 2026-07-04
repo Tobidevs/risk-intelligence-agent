@@ -28,6 +28,13 @@ class WorkflowState(TypedDict):
     current_year_mda: NotRequired[str]
     prior_year_mda: NotRequired[str]
 
+    # Populated by await_risk_factor_selection: the user-selected subset of
+    # current_year_risk_factors (each the same {"title", "summary", "category",
+    # "verbatim_text"} dict), injected when the interrupted run is resumed.
+    selected_risk_factors: NotRequired[list[dict[str, str]]]
+    # Populated by assess_selected_risk_factors (stub output for now).
+    assessment: NotRequired[list[dict]]
+
 
 RiskCategory = Literal[
     "Market Risk",
