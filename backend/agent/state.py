@@ -20,7 +20,8 @@ class WorkflowState(TypedDict):
     prior_year_html: NotRequired[str]
 
     # Populated by extract_filing_sections. Item 1A is decomposed into a list of
-    # individual risk factors, each a {"title", "category", "verbatim_text"}
+    # individual risk factors, each a {"title", "summary", "category",
+    # "verbatim_text"}
     # dict; Item 7 (MD&A) is kept as a single verbatim blob.
     current_year_risk_factors: NotRequired[list[dict[str, str]]]
     prior_year_risk_factors: NotRequired[list[dict[str, str]]]
@@ -48,12 +49,22 @@ class RiskFactor(BaseModel):
 
     title: str = Field(
         description=(
-            "A concise, descriptive title for this risk factor (roughly 3-8 "
-            "words), written by you as a heading — not the verbatim summary "
-            'sentence. For example, a factor whose summary sentence reads "The '
-            "Company's future performance depends in part on support from "
-            'third-party developers." might be titled "Reliance on Third-Party '
-            'Developers".'
+            "A concise, client-facing title for this risk factor (roughly 3-8 "
+            "words), written by you as a heading in clear, plain language a "
+            "reader assessing this risk can understand at a glance — not the "
+            'verbatim summary sentence. For example, a factor whose summary '
+            'sentence reads "The Company\'s future performance depends in part '
+            'on support from third-party developers." might be titled "Reliance '
+            'on Third-Party Developers".'
+        )
+    )
+    summary: str = Field(
+        description=(
+            "A concise, client-facing summary of this risk factor (roughly 2-4 "
+            "sentences) that you compose in plain language for a reader "
+            "assessing the risk. Explain what the risk is and why it matters to "
+            "the company in accessible terms — do not quote the filing "
+            "verbatim; paraphrase and clarify."
         )
     )
     category: RiskCategory = Field(

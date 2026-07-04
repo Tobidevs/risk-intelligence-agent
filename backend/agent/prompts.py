@@ -6,11 +6,16 @@ explanatory paragraphs. Split the text into individual, discrete risk factors, i
 the order they appear.
 
 For each risk factor, return:
-- title: a concise, descriptive title (roughly 3-8 words) that you write to name \
-the risk factor. This is your own heading, NOT the verbatim summary sentence. For \
-example, a factor whose summary sentence reads "The Company's future performance \
-depends in part on support from third-party developers." might be titled "Reliance \
-on Third-Party Developers".
+- title: a concise, client-facing title (roughly 3-8 words) that you write to name \
+the risk factor. Word it in clear, plain language that a client assessing this risk \
+can understand at a glance. This is your own heading, NOT the verbatim summary \
+sentence. For example, a factor whose summary sentence reads "The Company's future \
+performance depends in part on support from third-party developers." might be titled \
+"Reliance on Third-Party Developers".
+- summary: a concise, client-facing summary (roughly 2-4 sentences) that you compose \
+in plain language for a client assessing this risk. Explain what the risk is and why \
+it matters to the company in accessible terms. Do NOT quote the filing verbatim — \
+paraphrase and clarify.
 - category: the single category that best classifies the risk factor, chosen from \
 this exact set:
   - "Market Risk"
