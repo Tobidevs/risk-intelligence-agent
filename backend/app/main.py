@@ -7,7 +7,7 @@ init_tracing()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health, tickers
+from app.api.routes import analysis, health, tickers
 from app.core.config import get_settings
 
 
@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(tickers.router)
+    app.include_router(analysis.router)
 
     @app.get("/", tags=["system"])
     def root() -> dict[str, str]:
